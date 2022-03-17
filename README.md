@@ -35,7 +35,7 @@ func main() {
     fmt.Println("deleted=", deleted)
 
     // Search
-    value := tree.Search(art.Key("hello"))
+    value := tree.Search([]byte("hello"))
     fmt.Println("value=", value)
 
     // Traverse (with callback function)
@@ -68,11 +68,11 @@ BenchmarkUUIDsTreeInsert-16    	      19	  56799013 ns/op	20896024 B/op	  607520
 BenchmarkUUIDsTreeSearch
 BenchmarkUUIDsTreeSearch-16    	      34	  34188859 ns/op	       0 B/op	       0 allocs/op
 PASS
-ok  	github.com/arriqaaq/art	6.333s```
+ok  	github.com/arriqaaq/art	6.333s
 ```
 
 # References
 
-- [Kelly Dunn implementation of the Adaptive Radix Tree](https://github.com/kellydunn/go-art)
 - [The Adaptive Radix Tree: ARTful Indexing for Main-Memory Databases (Specification)](http://www-db.in.tum.de/~leis/papers/ART.pdf)
+- [Kelly Dunn implementation of the Adaptive Radix Tree](https://github.com/kellydunn/go-art)
 - [Beating hash tables with trees? The ART-ful radix trie](https://www.the-paper-trail.org/post/art-paper-notes/)

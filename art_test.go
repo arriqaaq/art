@@ -18,34 +18,34 @@ var (
 )
 
 func TestArtNode4AddChild4PreserveSorted(t *testing.T) {
-	n := newNode4()
+	n := newNode4().innerNode
 
 	for i := 4; i > 0; i-- {
 		n.addChild(byte(i), newNode4())
 	}
 
-	if n.innerNode.size < 4 {
+	if n.size < 4 {
 		t.Error("incorrect size after adding one child to empty Node4")
 	}
 
 	expectedKeys := []byte{1, 2, 3, 4}
-	if !bytes.Equal(n.innerNode.keys, expectedKeys) {
+	if !bytes.Equal(n.keys, expectedKeys) {
 		t.Error("Unexpected key sequence")
 	}
 }
 
 func TestArtNode16AddChild16PreserveSorted(t *testing.T) {
-	n := newNode16()
+	n := newNode16().innerNode
 	for i := 16; i > 0; i-- {
 		n.addChild(byte(i), newNode4())
 	}
 
-	if n.innerNode.size < 16 {
+	if n.size < 16 {
 		t.Error("incorrect size after adding one child to empty Node4")
 	}
 
 	for i := 0; i < 16; i++ {
-		if n.innerNode.keys[i] != byte(i+1) {
+		if n.keys[i] != byte(i+1) {
 			t.Error("Unexpected key sequence")
 		}
 	}
@@ -56,7 +56,7 @@ func TestGrow(t *testing.T) {
 	expectedTypes := []int{Node16, Node48, Node256}
 
 	for i, n := range nodes {
-		n.grow()
+		n.innerNode.grow()
 		if n.nodeType() != expectedTypes[i] {
 			fmt.Println("type: ", n.nodeType())
 			t.Error("Unexpected node type after growing")
@@ -69,12 +69,12 @@ func TestShrink(t *testing.T) {
 	expectedTypes := []int{Node48, Node16, Node4, Leaf}
 
 	for i, n := range nodes {
-
-		for j := 0; j < n.minSize(); j++ {
+		in := n.innerNode
+		for j := 0; j < in.minSize(); j++ {
 			if n.nodeType() != Node4 {
-				n.addChild(byte(i), newNode4())
+				in.addChild(byte(i), newNode4())
 			} else {
-				n.addChild(byte(i), newLeafNode(emptyKey, nil))
+				in.addChild(byte(i), newLeafNode(emptyKey, nil))
 			}
 		}
 
@@ -370,7 +370,7 @@ func TestInsert5AndRemove1AndRootShouldBeNode4(t *testing.T) {
 	}
 
 	tree.Delete([]byte{1})
-	res := (tree.root.findChild(byte(1)))
+	res := (tree.root.innerNode.findChild(byte(1)))
 	if res != nil {
 		t.Error("Did not expect to find child after removal")
 	}
@@ -399,15 +399,6 @@ func TestInsert5AndRemove5AndRootShouldBeNil(t *testing.T) {
 		tree.Delete([]byte{byte(i)})
 	}
 
-	res := tree.root.findChild(byte(1))
-	if res != nil && *res != nil {
-		t.Error("Did not expect to find child after removal")
-	}
-
-	if tree.size != 0 {
-		t.Error("Unexpected tree size after inserting and removing")
-	}
-
 	if tree.root != nil {
 		t.Error("Unexpected root node after inserting and removing")
 	}
@@ -425,7 +416,7 @@ func TestInsert17AndRemove1AndRootShouldBeNode16(t *testing.T) {
 	}
 
 	tree.Delete([]byte{2})
-	res := (tree.root.findChild(byte(2)))
+	res := (tree.root.innerNode.findChild(byte(2)))
 	if res != nil {
 		t.Error("Did not expect to find child after removal")
 	}
@@ -454,15 +445,6 @@ func TestInsert17AndRemove17AndRootShouldBeNil(t *testing.T) {
 		tree.Delete([]byte{byte(i)})
 	}
 
-	res := tree.root.findChild(byte(1))
-	if res != nil && *res != nil {
-		t.Error("Did not expect to find child after removal")
-	}
-
-	if tree.size != 0 {
-		t.Error("Unexpected tree size after inserting and removing")
-	}
-
 	if tree.root != nil {
 		t.Error("Unexpected root node after inserting and removing")
 	}
@@ -480,7 +462,7 @@ func TestInsert49AndRemove1AndRootShouldBeNode48(t *testing.T) {
 	}
 
 	tree.Delete([]byte{2})
-	res := (tree.root.findChild(byte(2)))
+	res := (tree.root.innerNode.findChild(byte(2)))
 	if res != nil {
 		t.Error("Did not expect to find child after removal")
 	}
@@ -507,15 +489,6 @@ func TestInsert49AndRemove49AndRootShouldBeNil(t *testing.T) {
 
 	for i := 0; i < 49; i++ {
 		tree.Delete([]byte{byte(i)})
-	}
-
-	res := tree.root.findChild(byte(1))
-	if res != nil && *res != nil {
-		t.Error("Did not expect to find child after removal")
-	}
-
-	if tree.size != 0 {
-		t.Error("Unexpected tree size after inserting and removing")
 	}
 
 	if tree.root != nil {

@@ -44,6 +44,7 @@ type (
 		keys     []byte
 		children []*Node
 	}
+
 	Node struct {
 		// inner nodes map partial keys to child pointers
 		innerNode *innerNode
@@ -108,11 +109,15 @@ func min(a int, b int) int {
 	return b
 }
 
-func replace(old, new *Node) {
+func replace(old, new *innerNode) {
 	*old = *new
 }
 
-func replaceRef(oldNode **Node, newNode *Node) {
+func replaceNode(old, new *Node) {
+	*old = *new
+}
+
+func replaceNodeRef(oldNode **Node, newNode *Node) {
 	*oldNode = newNode
 }
 
@@ -192,7 +197,227 @@ func (n *leafNode) isMatch(key []byte) bool {
 	return bytes.Equal(n.key, key)
 }
 
-func (n *Node) isFull() bool { return n.innerNode.size == n.maxSize() }
+func (n *leafNode) longestCommonPrefix(leaf *leafNode, depth int) int {
+	limit := min(len(n.key), len(leaf.key)) - depth
+
+	i := 0
+	for ; i < limit; i++ {
+		if n.key[depth+i] != leaf.key[depth+i] {
+			return i
+		}
+	}
+	return i
+}
+
+func (n *innerNode) isFull() bool { return n.size == n.maxSize() }
+
+func (n *innerNode) copyMeta(src *innerNode) {
+	n.meta = src.meta
+}
+
+func (n *innerNode) minSize() int {
+	switch n.nodeType {
+	case Node4:
+		return Node4Min
+	case Node16:
+		return Node16Min
+	case Node48:
+		return Node48Min
+	case Node256:
+		return Node256Min
+	default:
+	}
+	return 0
+}
+
+func (n *innerNode) maxSize() int {
+	switch n.nodeType {
+	case Node4:
+		return Node4Max
+	case Node16:
+		return Node16Max
+	case Node48:
+		return Node48Max
+	case Node256:
+		return Node256Max
+	default:
+	}
+	return 0
+}
+
+func (n *innerNode) index(key byte) int {
+	switch n.nodeType {
+	case Node4:
+		for i := 0; i < n.size; i++ {
+			if n.keys[i] == key {
+				return int(i)
+			}
+		}
+		return -1
+	case Node16:
+		bitfield := uint(0)
+		for i := 0; i < n.size; i++ {
+			if n.keys[i] == key {
+				bitfield |= (1 << i)
+			}
+		}
+		mask := (1 << n.size) - 1
+		bitfield &= uint(mask)
+		if bitfield != 0 {
+			return bits.TrailingZeros(bitfield)
+		}
+		return -1
+	case Node48:
+		index := int(n.keys[key])
+		if index > 0 {
+			return int(index) - 1
+		}
+
+		return -1
+	case Node256:
+		return int(key)
+	}
+
+	return -1
+}
+
+func (n *innerNode) findChild(key byte) **Node {
+	if n == nil {
+		return nil
+	}
+
+	index := n.index(key)
+
+	switch n.nodeType {
+	case Node4, Node16, Node48:
+		if index >= 0 {
+			return &n.children[index]
+		}
+
+		return nil
+
+	case Node256:
+		child := n.children[key]
+		if child != nil {
+			return &n.children[key]
+		}
+	}
+
+	return nil
+}
+
+func (n *innerNode) addChild(key byte, node *Node) {
+	if n.isFull() {
+		n.grow()
+		n.addChild(key, node)
+		return
+	}
+
+	switch n.nodeType {
+	case Node4:
+		idx := 0
+		for ; idx < n.size; idx++ {
+			if key < n.keys[idx] {
+				break
+			}
+		}
+
+		for i := n.size; i > idx; i-- {
+			if n.keys[i-1] > key {
+				n.keys[i] = n.keys[i-1]
+				n.children[i] = n.children[i-1]
+			}
+		}
+
+		n.keys[idx] = key
+		n.children[idx] = node
+		n.size += 1
+
+	case Node16:
+		idx := n.size
+		bitfield := uint(0)
+		for i := 0; i < n.size; i++ {
+			if n.keys[i] >= key {
+				bitfield |= (1 << i)
+			}
+		}
+		mask := (1 << n.size) - 1
+		bitfield &= uint(mask)
+		if bitfield != 0 {
+			idx = bits.TrailingZeros(bitfield)
+		}
+
+		for i := n.size; i > idx; i-- {
+			if n.keys[i-1] > key {
+				n.keys[i] = n.keys[i-1]
+				n.children[i] = n.children[i-1]
+			}
+		}
+
+		n.keys[idx] = key
+		n.children[idx] = node
+		n.size += 1
+
+	case Node48:
+		idx := 0
+		for i := 0; i < len(n.children); i++ {
+			if n.children[idx] != nil {
+				idx++
+			}
+		}
+		n.children[idx] = node
+		n.keys[key] = byte(idx + 1)
+		n.size += 1
+
+	case Node256:
+		n.children[key] = node
+		n.size += 1
+	}
+}
+
+func (n *innerNode) grow() {
+	switch n.nodeType {
+	case Node4:
+		n16 := newNode16().innerNode
+		n16.copyMeta(n)
+		for i := 0; i < n.size; i++ {
+			n16.keys[i] = n.keys[i]
+			n16.children[i] = n.children[i]
+		}
+		replace(n, n16)
+
+	case Node16:
+		n48 := newNode48().innerNode
+		n48.copyMeta(n)
+
+		index := 0
+		for i := 0; i < n.size; i++ {
+			child := n.children[i]
+			if child != nil {
+				n48.keys[n.keys[i]] = byte(index + 1)
+				n48.children[index] = child
+				index++
+			}
+		}
+
+		replace(n, n48)
+
+	case Node48:
+		n256 := newNode256().innerNode
+		n256.copyMeta(n)
+
+		for i := 0; i < len(n.keys); i++ {
+			child := (n.findChild(byte(i)))
+			if child != nil {
+				n256.children[byte(i)] = *child
+			}
+		}
+
+		replace(n, n256)
+
+	case Node256:
+	}
+}
 
 func (n *Node) isLeaf() bool { return n.leaf != nil }
 
@@ -219,147 +444,12 @@ func (n *Node) prefixMismatch(key []byte, depth int) int {
 	return idx
 }
 
-func (n *Node) index(key byte) int {
-	in := n.innerNode
-
-	switch n.nodeType() {
-	case Node4:
-		for i := 0; i < in.size; i++ {
-			if in.keys[i] == key {
-				return int(i)
-			}
-		}
-		return -1
-	case Node16:
-		bitfield := uint(0)
-		for i := 0; i < in.size; i++ {
-			if in.keys[i] == key {
-				bitfield |= (1 << i)
-			}
-		}
-		mask := (1 << in.size) - 1
-		bitfield &= uint(mask)
-		if bitfield != 0 {
-			return bits.TrailingZeros(bitfield)
-		}
-		return -1
-	case Node48:
-		index := int(in.keys[key])
-		if index > 0 {
-			return int(index) - 1
-		}
-
-		return -1
-	case Node256:
-		return int(key)
-	}
-
-	return -1
-}
-
-func (n *Node) findChild(key byte) **Node {
-	if n == nil {
-		return nil
-	}
-
-	in := n.innerNode
-	index := n.index(key)
-
-	switch n.nodeType() {
-	case Node4, Node16, Node48:
-		if index >= 0 {
-			return &in.children[index]
-		}
-
-		return nil
-
-	case Node256:
-		child := in.children[key]
-		if child != nil {
-			return &in.children[key]
-		}
-	}
-
-	return nil
-}
-
-func (n *Node) addChild(key byte, node *Node) {
-	if n.isFull() {
-		n.grow()
-		n.addChild(key, node)
-		return
-	}
-
-	in := n.innerNode
-
-	switch n.nodeType() {
-	case Node4:
-		idx := 0
-		for ; idx < in.size; idx++ {
-			if key < in.keys[idx] {
-				break
-			}
-		}
-
-		for i := in.size; i > idx; i-- {
-			if in.keys[i-1] > key {
-				in.keys[i] = in.keys[i-1]
-				in.children[i] = in.children[i-1]
-			}
-		}
-
-		in.keys[idx] = key
-		in.children[idx] = node
-		in.size += 1
-
-	case Node16:
-		idx := in.size
-		bitfield := uint(0)
-		for i := 0; i < in.size; i++ {
-			if in.keys[i] >= key {
-				bitfield |= (1 << i)
-			}
-		}
-		mask := (1 << in.size) - 1
-		bitfield &= uint(mask)
-		if bitfield != 0 {
-			idx = bits.TrailingZeros(bitfield)
-		}
-
-		for i := in.size; i > idx; i-- {
-			if in.keys[i-1] > key {
-				in.keys[i] = in.keys[i-1]
-				in.children[i] = in.children[i-1]
-			}
-		}
-
-		in.keys[idx] = key
-		in.children[idx] = node
-		in.size += 1
-
-	case Node48:
-		idx := 0
-		for i := 0; i < len(in.children); i++ {
-			if in.children[idx] != nil {
-				idx++
-			}
-		}
-		in.children[idx] = node
-		in.keys[key] = byte(idx + 1)
-		in.size += 1
-
-	case Node256:
-		in.children[key] = node
-		in.size += 1
-	}
-}
-
 func (n *Node) deleteChild(key byte) {
 	in := n.innerNode
 
 	switch n.nodeType() {
 	case Node4, Node16:
-		idx := n.index(key)
+		idx := in.index(key)
 
 		in.keys[idx] = 0
 		in.children[idx] = nil
@@ -377,8 +467,7 @@ func (n *Node) deleteChild(key byte) {
 		in.size -= 1
 
 	case Node48:
-		idx := n.index(key)
-
+		idx := in.index(key)
 		if idx >= 0 {
 			child := in.children[idx]
 			if child != nil {
@@ -389,7 +478,7 @@ func (n *Node) deleteChild(key byte) {
 		}
 
 	case Node256:
-		idx := n.index(key)
+		idx := in.index(key)
 		child := in.children[idx]
 		if child != nil {
 			in.children[idx] = nil
@@ -397,55 +486,8 @@ func (n *Node) deleteChild(key byte) {
 		}
 	}
 
-	if in.size < n.minSize() {
+	if in.size < in.minSize() {
 		n.shrink()
-	}
-}
-
-func (n *Node) grow() {
-	in := n.innerNode
-
-	switch n.nodeType() {
-	case Node4:
-		n16 := newNode16()
-		n16.copyMeta(n)
-		n16in := n16.innerNode
-		for i := 0; i < in.size; i++ {
-			n16in.keys[i] = in.keys[i]
-			n16in.children[i] = in.children[i]
-		}
-		replace(n, n16)
-
-	case Node16:
-		n48 := newNode48()
-		n48.copyMeta(n)
-		n48in := n48.innerNode
-		index := 0
-		for i := 0; i < in.size; i++ {
-			child := in.children[i]
-			if child != nil {
-				n48in.keys[in.keys[i]] = byte(index + 1)
-				n48in.children[index] = child
-				index++
-			}
-		}
-
-		replace(n, n48)
-
-	case Node48:
-		n256 := newNode256()
-		n256.copyMeta(n)
-		n256in := n256.innerNode
-		for i := 0; i < len(in.keys); i++ {
-			child := (n.findChild(byte(i)))
-			if child != nil {
-				n256in.children[byte(i)] = *child
-			}
-		}
-
-		replace(n, n256)
-
-	case Node256:
 	}
 }
 
@@ -455,7 +497,6 @@ func (n *Node) shrink() {
 	switch n.nodeType() {
 	case Node4:
 		c := in.children[0]
-
 		if !c.isLeaf() {
 			child := c.innerNode
 			currentPrefixLen := in.prefixLen
@@ -475,12 +516,12 @@ func (n *Node) shrink() {
 			child.prefixLen += in.prefixLen + 1
 		}
 
-		replace(n, c)
+		replaceNode(n, c)
 
 	case Node16:
 		n4 := newNode4()
-		n4.copyMeta(n)
 		n4in := n4.innerNode
+		n4in.copyMeta(n.innerNode)
 		n4in.size = 0
 
 		for i := 0; i < len(n4in.keys); i++ {
@@ -489,12 +530,12 @@ func (n *Node) shrink() {
 			n4in.size++
 		}
 
-		replace(n, n4)
+		replaceNode(n, n4)
 
 	case Node48:
 		n16 := newNode16()
-		n16.copyMeta(n)
 		n16in := n16.innerNode
+		n16in.copyMeta(n.innerNode)
 		n16in.size = 0
 
 		for i := 0; i < len(in.keys); i++ {
@@ -509,12 +550,12 @@ func (n *Node) shrink() {
 			}
 		}
 
-		replace(n, n16)
+		replaceNode(n, n16)
 
 	case Node256:
 		n48 := newNode48()
-		n48.copyMeta(n)
 		n48in := n48.innerNode
+		n48in.copyMeta(n.innerNode)
 		n48in.size = 0
 
 		for i := 0; i < len(in.children); i++ {
@@ -526,50 +567,8 @@ func (n *Node) shrink() {
 			}
 		}
 
-		replace(n, n48)
+		replaceNode(n, n48)
 	}
-}
-
-func (n *leafNode) longestCommonPrefix(leaf *leafNode, depth int) int {
-	limit := min(len(n.key), len(leaf.key)) - depth
-
-	i := 0
-	for ; i < limit; i++ {
-		if n.key[depth+i] != leaf.key[depth+i] {
-			return i
-		}
-	}
-	return i
-}
-
-func (n *Node) minSize() int {
-	switch n.nodeType() {
-	case Node4:
-		return Node4Min
-	case Node16:
-		return Node16Min
-	case Node48:
-		return Node48Min
-	case Node256:
-		return Node256Min
-	default:
-	}
-	return 0
-}
-
-func (n *Node) maxSize() int {
-	switch n.nodeType() {
-	case Node4:
-		return Node4Max
-	case Node16:
-		return Node16Max
-	case Node48:
-		return Node48Max
-	case Node256:
-		return Node256Max
-	default:
-	}
-	return 0
 }
 
 func (n *Node) minimum() *Node {
@@ -634,10 +633,6 @@ func (n *Node) maximum() *Node {
 	return n
 }
 
-func (n *Node) copyMeta(src *Node) {
-	n.innerNode.meta = src.innerNode.meta
-}
-
 func (n *Node) Key() []byte {
 	if n.nodeType() != Leaf {
 		return nil
@@ -681,7 +676,7 @@ func (t *Tree) search(current *Node, key []byte, depth int) interface{} {
 			depth += in.prefixLen
 		}
 
-		v := current.findChild(key[depth])
+		v := in.findChild(key[depth])
 		if v == nil {
 			return nil
 		}
@@ -704,7 +699,7 @@ func (t *Tree) Insert(key []byte, value interface{}) bool {
 func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth int) bool {
 	current := *currentRef
 	if current == nil {
-		replaceRef(currentRef, newLeafNode(key, value))
+		replaceNodeRef(currentRef, newLeafNode(key, value))
 		return false
 	}
 
@@ -726,9 +721,9 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 
 		depth += n4in.prefixLen
 
-		n4.addChild(currentLeaf.key[depth], current)
-		n4.addChild(key[depth], newLeaf)
-		replaceRef(currentRef, n4)
+		n4in.addChild(currentLeaf.key[depth], current)
+		n4in.addChild(key[depth], newLeaf)
+		replaceNodeRef(currentRef, n4)
 
 		return false
 	}
@@ -738,37 +733,38 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 		mismatch := current.prefixMismatch(key, depth)
 
 		if mismatch != in.prefixLen {
-			newNode := newNode4()
-			replaceRef(currentRef, newNode)
-			newNode.innerNode.prefixLen = mismatch
+			n4 := newNode4()
+			n4in := n4.innerNode
+			replaceNodeRef(currentRef, n4)
+			n4in.prefixLen = mismatch
 
-			copyBytes(newNode.innerNode.prefix, in.prefix, mismatch)
+			copyBytes(n4in.prefix, in.prefix, mismatch)
 
 			if in.prefixLen < MaxPrefixLen {
-				newNode.addChild(in.prefix[mismatch], current)
+				n4in.addChild(in.prefix[mismatch], current)
 				in.prefixLen -= (mismatch + 1)
 				copyBytes(in.prefix, in.prefix[mismatch+1:], min(in.prefixLen, MaxPrefixLen))
 			} else {
 				in.prefixLen -= (mismatch + 1)
 				minKey := current.minimum().leaf.key
-				newNode.addChild(minKey[depth+mismatch], current)
+				n4in.addChild(minKey[depth+mismatch], current)
 				copyBytes(in.prefix, minKey[depth+mismatch+1:], min(in.prefixLen, MaxPrefixLen))
 			}
 
 			newLeafNode := newLeafNode(key, value)
-			newNode.addChild(key[depth+mismatch], newLeafNode)
+			n4in.addChild(key[depth+mismatch], newLeafNode)
 
 			return false
 		}
 		depth += in.prefixLen
 	}
 
-	next := current.findChild(key[depth])
+	next := in.findChild(key[depth])
 	if next != nil {
 		return t.insert(next, key, value, depth+1)
 	}
 
-	current.addChild(key[depth], newLeafNode(key, value))
+	in.addChild(key[depth], newLeafNode(key, value))
 	return false
 }
 
@@ -786,7 +782,7 @@ func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 	current := *currentRef
 	if current.isLeaf() {
 		if current.leaf.isMatch(key) {
-			replaceRef(currentRef, nil)
+			replaceNodeRef(currentRef, nil)
 			return true
 		}
 	} else {
@@ -799,7 +795,7 @@ func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 			depth += in.prefixLen
 		}
 
-		next := current.findChild(key[depth])
+		next := in.findChild(key[depth])
 		if *next != nil {
 			if (*next).isLeaf() {
 				leaf := (*next).leaf
@@ -901,15 +897,16 @@ func (ti *iterator) next() {
 		curNode := ti.levels[ti.levelIdx].node
 		curChildIdx := ti.levels[ti.levelIdx].childIdx
 
+		in := curNode.innerNode
 		switch curNode.nodeType() {
 		case Node4:
-			nextIdx, nextNode = nextChild(curNode.innerNode.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curChildIdx)
 		case Node16:
-			nextIdx, nextNode = nextChild(curNode.innerNode.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curChildIdx)
 		case Node48:
-			node := curNode
-			for i := curChildIdx; i < len(node.innerNode.keys); i++ {
-				child := node.innerNode.children[node.innerNode.keys[i]]
+			for i := curChildIdx; i < len(in.keys); i++ {
+				index := in.keys[byte(i)]
+				child := in.children[index]
 				if child != nil {
 					nextIdx = i + 1
 					nextNode = child
@@ -917,7 +914,7 @@ func (ti *iterator) next() {
 				}
 			}
 		case Node256:
-			nextIdx, nextNode = nextChild(curNode.innerNode.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curChildIdx)
 		}
 
 		if nextNode == nil {
