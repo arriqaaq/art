@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	_ "log"
 	"math/rand"
 	"os"
+	"sort"
 	"testing"
 
+	"github.com/armon/go-radix"
+	"github.com/arriqaaq/skiplist"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -17,7 +19,7 @@ var (
 	emptyKey = []byte("")
 )
 
-func TestArtNode4AddChild4PreserveSorted(t *testing.T) {
+func TestNode4AddChild4PreserveSorted(t *testing.T) {
 	n := newNode4().innerNode
 
 	for i := 4; i > 0; i-- {
@@ -34,7 +36,7 @@ func TestArtNode4AddChild4PreserveSorted(t *testing.T) {
 	}
 }
 
-func TestArtNode16AddChild16PreserveSorted(t *testing.T) {
+func TestNode16AddChild16PreserveSorted(t *testing.T) {
 	n := newNode16().innerNode
 	for i := 16; i > 0; i-- {
 		n.addChild(byte(i), newNode4())
@@ -57,8 +59,8 @@ func TestGrow(t *testing.T) {
 
 	for i, n := range nodes {
 		n.innerNode.grow()
-		if n.nodeType() != expectedTypes[i] {
-			fmt.Println("type: ", n.nodeType())
+		if n.Type() != expectedTypes[i] {
+			fmt.Println("type: ", n.Type())
 			t.Error("Unexpected node type after growing")
 		}
 	}
@@ -71,7 +73,7 @@ func TestShrink(t *testing.T) {
 	for i, n := range nodes {
 		in := n.innerNode
 		for j := 0; j < in.minSize(); j++ {
-			if n.nodeType() != Node4 {
+			if n.Type() != Node4 {
 				in.addChild(byte(i), newNode4())
 			} else {
 				in.addChild(byte(i), newLeafNode(emptyKey, nil))
@@ -79,13 +81,13 @@ func TestShrink(t *testing.T) {
 		}
 
 		n.shrink()
-		if n.nodeType() != expectedTypes[i] {
+		if n.Type() != expectedTypes[i] {
 			t.Error("Unexpected node type after shrinking")
 		}
 	}
 }
 
-func TestArtTreeInsert(t *testing.T) {
+func TestTreeInsert(t *testing.T) {
 	tree := NewTree()
 	tree.Insert([]byte("hello"), "world")
 	if tree.root == nil {
@@ -96,12 +98,12 @@ func TestArtTreeInsert(t *testing.T) {
 		t.Error("Unexpected size after inserting.")
 	}
 
-	if tree.root.nodeType() != Leaf {
+	if tree.root.Type() != Leaf {
 		t.Error("Unexpected node type for root after a single insert.")
 	}
 }
 
-func TestArtTreeInsertAndSearch(t *testing.T) {
+func TestTreeInsertAndSearch(t *testing.T) {
 	tree := NewTree()
 
 	tree.Insert([]byte("hello"), "world")
@@ -112,7 +114,7 @@ func TestArtTreeInsertAndSearch(t *testing.T) {
 	}
 }
 
-func TestArtTreeInsert2AndSearch(t *testing.T) {
+func TestTreeInsert2AndSearch(t *testing.T) {
 	tree := NewTree()
 
 	tree.Insert([]byte("hello"), "world")
@@ -133,12 +135,11 @@ func TestArtTreeInsert2AndSearch(t *testing.T) {
 	if res := tree.Search([]byte("yoli")); res != "earth" {
 		t.Error("unexpected search result")
 	}
-
 }
 
 // An Art Node with a similar prefix should be split into new nodes accordingly
 // And should be searchable as intended.
-func TestArtTreeInsert3AndSearchWords(t *testing.T) {
+func TestTreeInsert3AndSearchWords(t *testing.T) {
 	tree := NewTree()
 
 	searchTerms := []string{"A", "a", "aa"}
@@ -154,38 +155,38 @@ func TestArtTreeInsert3AndSearchWords(t *testing.T) {
 	}
 }
 
-func TestArtTreeInsert5AndRootShouldBeNode16(t *testing.T) {
+func TestTreeInsert5AndRootShouldBeNode16(t *testing.T) {
 	tree := NewTree()
 
 	for i := 0; i < 5; i++ {
 		tree.Insert([]byte{byte(i)}, "data")
 	}
 
-	if tree.root.nodeType() != Node16 {
+	if tree.root.Type() != Node16 {
 		t.Error("Unexpected root value after inserting past Node4 Maximum")
 	}
 }
 
-func TestArtTreeInsert17AndRootShouldBeNode48(t *testing.T) {
+func TestTreeInsert17AndRootShouldBeNode48(t *testing.T) {
 	tree := NewTree()
 
 	for i := 0; i < 17; i++ {
 		tree.Insert([]byte{byte(i)}, "data")
 	}
 
-	if tree.root.nodeType() != Node48 {
+	if tree.root.Type() != Node48 {
 		t.Error("Unexpected root value after inserting past Node16 Maximum")
 	}
 }
 
-func TestArtTreeInsert49AndRootShouldBeNode256(t *testing.T) {
+func TestTreeInsert49AndRootShouldBeNode256(t *testing.T) {
 	tree := NewTree()
 
 	for i := 0; i < 49; i++ {
 		tree.Insert([]byte{byte(i)}, "data")
 	}
 
-	if tree.root.nodeType() != Node256 {
+	if tree.root.Type() != Node256 {
 		t.Error("Unexpected root value after inserting past Node16 Maximum")
 	}
 }
@@ -331,7 +332,7 @@ func TestInsert2AndRemove1AndRootShouldBeLeafNode(t *testing.T) {
 		t.Error("Unexpected tree size after inserting and removing")
 	}
 
-	if tree.root == nil || tree.root.nodeType() != Leaf {
+	if tree.root == nil || tree.root.Type() != Leaf {
 		t.Error("Unexpected root node after inserting and removing")
 	}
 }
@@ -379,7 +380,7 @@ func TestInsert5AndRemove1AndRootShouldBeNode4(t *testing.T) {
 		t.Error("Unexpected tree size after inserting and removing")
 	}
 
-	if tree.root == nil || tree.root.nodeType() != Node4 {
+	if tree.root == nil || tree.root.Type() != Node4 {
 		t.Error("Unexpected root node after inserting and removing")
 	}
 }
@@ -425,7 +426,7 @@ func TestInsert17AndRemove1AndRootShouldBeNode16(t *testing.T) {
 		t.Error("Unexpected tree size after inserting and removing")
 	}
 
-	if tree.root == nil || tree.root.nodeType() != Node16 {
+	if tree.root == nil || tree.root.Type() != Node16 {
 		t.Error("Unexpected root node after inserting and removing")
 	}
 }
@@ -471,7 +472,7 @@ func TestInsert49AndRemove1AndRootShouldBeNode48(t *testing.T) {
 		t.Error("Unexpected tree size after inserting and removing")
 	}
 
-	if tree.root == nil || tree.root.nodeType() != Node48 {
+	if tree.root == nil || tree.root.Type() != Node48 {
 		t.Error("Unexpected root node after inserting and removing")
 	}
 }
@@ -509,15 +510,15 @@ func TestEachPreOrderness(t *testing.T) {
 	})
 
 	// Order should be Node4, 1, 2
-	if traversal[0] != tree.root || traversal[0].nodeType() != Node4 {
+	if traversal[0] != tree.root || traversal[0].Type() != Node4 {
 		t.Error("Unexpected node at begining of traversal")
 	}
 
-	if !bytes.Equal(traversal[1].leaf.key, append([]byte("1"), 0)) || traversal[1].nodeType() != Leaf {
+	if !bytes.Equal(traversal[1].leaf.key, append([]byte("1"), 0)) || traversal[1].Type() != Leaf {
 		t.Error("Unexpected node at second element of traversal")
 	}
 
-	if !bytes.Equal(traversal[2].leaf.key, append([]byte("2"), 0)) || traversal[2].nodeType() != Leaf {
+	if !bytes.Equal(traversal[2].leaf.key, append([]byte("2"), 0)) || traversal[2].Type() != Leaf {
 		t.Error("Unexpected node at third element of traversal")
 	}
 }
@@ -540,12 +541,12 @@ func TestEachNode48(t *testing.T) {
 	})
 
 	// Order should be Node48, then the rest of the keys in sorted order
-	if traversal[0] != tree.root || traversal[0].nodeType() != Node48 {
+	if traversal[0] != tree.root || traversal[0].Type() != Node48 {
 		t.Error("Unexpected node at begining of traversal")
 	}
 
 	for i := 1; i < 48; i++ {
-		if !bytes.Equal(traversal[i].leaf.key, append([]byte{byte(i)}, 0)) || traversal[i].nodeType() != Leaf {
+		if !bytes.Equal(traversal[i].leaf.key, append([]byte{byte(i)}, 0)) || traversal[i].Type() != Leaf {
 			t.Error("Unexpected node at second element of traversal")
 		}
 	}
@@ -580,7 +581,7 @@ func TestEachFullIterationExpectCountOfAllTypes(t *testing.T) {
 	var node256Count int = 0
 
 	tree.Each(func(node *Node) {
-		switch node.nodeType() {
+		switch node.Type() {
 		case Node4:
 			node4Count++
 		case Node16:
@@ -638,25 +639,17 @@ func TestInsertManyWordsAndRemoveThemAll(t *testing.T) {
 		}
 	}
 
-	file.Seek(int64(os.SEEK_SET), 0)
-
-	numFound := 0
+	file.Seek(0, 0)
 
 	for {
 		if line, err := reader.ReadBytes('\n'); err != nil {
 			break
 		} else {
 			tree.Delete([]byte(line))
-
-			dblCheck := tree.Search([]byte(line))
-			if dblCheck != nil {
-				numFound += 1
-			}
 		}
 	}
 
 	if tree.size != 0 {
-		fmt.Println("size ", tree.size)
 		t.Error("Tree is not empty after adding and removing many words")
 	}
 
@@ -687,20 +680,13 @@ func TestInsertManyUUIDsAndRemoveThemAll(t *testing.T) {
 		}
 	}
 
-	file.Seek(int64(os.SEEK_SET), 0)
-
-	numFound := 0
+	file.Seek(0, 0)
 
 	for {
 		if line, err := reader.ReadBytes('\n'); err != nil {
 			break
 		} else {
 			tree.Delete([]byte(line))
-
-			dblCheck := tree.Search([]byte(line))
-			if dblCheck != nil {
-				numFound += 1
-			}
 		}
 	}
 
@@ -750,19 +736,145 @@ func TestTreeIterator(t *testing.T) {
 	assert.NotNil(t, it)
 
 	n := it.Next()
-	assert.Equal(t, Node4, n.nodeType())
+	assert.Equal(t, Node4, n.Type())
 
 	n = it.Next()
-	assert.Equal(t, Leaf, n.nodeType())
+	assert.Equal(t, Leaf, n.Type())
 	assert.Equal(t, n.leaf.value, []byte{1})
 
 	n = it.Next()
-	assert.Equal(t, Leaf, n.nodeType())
+	assert.Equal(t, Leaf, n.Type())
 	assert.Equal(t, n.leaf.value, []byte{2})
 
 	assert.False(t, it.HasNext())
 	n = it.Next()
 	assert.Nil(t, n)
+}
+
+// https://github.com/plar/go-adaptive-radix-tree/blob/e4cdd437992f3811b732416fd668ba6209db61a8/tree_test.go#L601
+func TestTreeTraversalPrefix(t *testing.T) {
+	dataSet := []struct {
+		keyPrefix string
+		keys      []string
+		expected  []string
+	}{
+		{
+			"",
+			[]string{},
+			[]string{},
+		},
+		{
+			"api",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "api.foo", "api"},
+		},
+		{
+			"a",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+		},
+		{
+			"b",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{},
+		},
+		{
+			"api.",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "api.foo"},
+		},
+		{
+			"api.foo.bar",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{"api.foo.bar"},
+		},
+		{
+			"api.end",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{},
+		},
+		{
+			"",
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+			[]string{"api.foo.bar", "api.foo.baz", "api.foe.fum", "abc.123.456", "api.foo", "api"},
+		},
+		{
+			"this:key:has",
+			[]string{
+				"this:key:has:a:long:prefix:3",
+				"this:key:has:a:long:common:prefix:2",
+				"this:key:has:a:long:common:prefix:1",
+			},
+			[]string{
+				"this:key:has:a:long:prefix:3",
+				"this:key:has:a:long:common:prefix:2",
+				"this:key:has:a:long:common:prefix:1",
+			},
+		},
+		{
+			"ele",
+			[]string{"elector", "electibles", "elect", "electible"},
+			[]string{"elector", "electibles", "elect", "electible"},
+		},
+		{
+			"long.api.url.v1",
+			[]string{"long.api.url.v1.foo", "long.api.url.v1.bar", "long.api.url.v2.foo"},
+			[]string{"long.api.url.v1.foo", "long.api.url.v1.bar"},
+		},
+	}
+
+	for _, d := range dataSet {
+		tree := NewTree()
+		for _, k := range d.keys {
+			tree.Insert([]byte(k), string(k))
+		}
+
+		actual := []string{}
+		leafFilter := func(n *Node) {
+			if n.IsLeaf() {
+				actual = append(actual, string(n.Key()))
+			}
+		}
+		tree.Scan([]byte(d.keyPrefix), leafFilter)
+
+		sort.Strings(d.expected)
+		sort.Strings(actual)
+		assert.Equal(t, len(d.expected), len(actual))
+		assert.Equal(t, d.expected, actual, d.keyPrefix)
+	}
+}
+
+func TestWordsWithPrefix(t *testing.T) {
+	tree := NewTree()
+
+	file, err := os.Open("test/words.txt")
+	if err != nil {
+		t.Error("Couldn't open words.txt")
+	}
+
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		if line, err := reader.ReadBytes('\n'); err != nil {
+			break
+		} else {
+			tree.Insert([]byte(line), []byte(line))
+		}
+	}
+
+	actual := []string{}
+	leafFilter := func(n *Node) {
+		if n.IsLeaf() {
+			actual = append(actual, string(n.Key()))
+		}
+	}
+	tree.Scan([]byte("aa"), leafFilter)
+
+	if len(actual) != 6 {
+		fmt.Println(len(actual))
+		t.Error("Tree is not empty after adding and removing many words")
+	}
 }
 
 //
@@ -789,7 +901,7 @@ func loadTestFile(path string) [][]byte {
 	}
 	return words
 }
-func BenchmarkWordsTreeInsert(b *testing.B) {
+func BenchmarkWordsArtTreeInsert(b *testing.B) {
 	words := loadTestFile("test/words.txt")
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -800,7 +912,7 @@ func BenchmarkWordsTreeInsert(b *testing.B) {
 	}
 }
 
-func BenchmarkWordsTreeSearch(b *testing.B) {
+func BenchmarkWordsArtTreeSearch(b *testing.B) {
 	words := loadTestFile("test/words.txt")
 	tree := NewTree()
 	for _, w := range words {
@@ -814,7 +926,7 @@ func BenchmarkWordsTreeSearch(b *testing.B) {
 	}
 }
 
-func BenchmarkUUIDsTreeInsert(b *testing.B) {
+func BenchmarkUUIDsArtTreeInsert(b *testing.B) {
 	words := loadTestFile("test/uuid.txt")
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
@@ -825,7 +937,7 @@ func BenchmarkUUIDsTreeInsert(b *testing.B) {
 	}
 }
 
-func BenchmarkUUIDsTreeSearch(b *testing.B) {
+func BenchmarkUUIDsArtTreeSearch(b *testing.B) {
 	words := loadTestFile("test/uuid.txt")
 	tree := NewTree()
 	for _, w := range words {
@@ -835,6 +947,56 @@ func BenchmarkUUIDsTreeSearch(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		for _, w := range words {
 			tree.Search(w)
+		}
+	}
+}
+
+func BenchmarkWordsRadixInsert(b *testing.B) {
+	words := loadTestFile("test/words.txt")
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		tree := radix.New()
+		for _, w := range words {
+			tree.Insert(string(w), string(w))
+		}
+	}
+}
+
+func BenchmarkWordsRadixSearch(b *testing.B) {
+	words := loadTestFile("test/words.txt")
+	tree := radix.New()
+	for _, w := range words {
+		tree.Insert(string(w), string(w))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, w := range words {
+			tree.Get(string(w))
+		}
+	}
+}
+
+func BenchmarkWordsSkiplistInsert(b *testing.B) {
+	words := loadTestFile("test/words.txt")
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		tree := skiplist.New()
+		for _, w := range words {
+			tree.Set(string(w), string(w))
+		}
+	}
+}
+
+func BenchmarkWordsSkiplistSearch(b *testing.B) {
+	words := loadTestFile("test/words.txt")
+	tree := skiplist.New()
+	for _, w := range words {
+		tree.Set(string(w), string(w))
+	}
+	b.ResetTimer()
+	for n := 0; n < b.N; n++ {
+		for _, w := range words {
+			tree.Get(string(w))
 		}
 	}
 }

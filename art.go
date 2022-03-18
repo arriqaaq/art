@@ -1,28 +1,12 @@
 /*
 	https://db.in.tum.de/~leis/papers/ART.pdf
-
-	Radix trees have a number of interesting properties that
-	distinguish them from comparison-based search trees:
-
-	• The height (and complexity) of radix trees depends on
-	the length of the keys but in general not on the number
-	of elements in the tree.
-	• Radix trees require no rebalancing operations and all
-	insertion orders result in the same tree.
-	• The keys are stored in lexicographic order.
-	• The path to a leaf node represents the key of that
-	leaf. Therefore, keys are stored implicitly and can be
-	reconstructed from paths.
-
 */
 
 package art
 
 import (
 	"bytes"
-	_ "math"
 	"math/bits"
-	_ "os"
 )
 
 type (
@@ -59,8 +43,8 @@ type (
 	}
 
 	level struct {
-		node     *Node
-		childIdx int
+		node  *Node
+		index int
 	}
 
 	iterator struct {
@@ -193,11 +177,15 @@ func newNode256() *Node {
 	return &Node{innerNode: in}
 }
 
-func (n *leafNode) isMatch(key []byte) bool {
+func (n *leafNode) IsMatch(key []byte) bool {
 	return bytes.Equal(n.key, key)
 }
 
-func (n *leafNode) longestCommonPrefix(leaf *leafNode, depth int) int {
+func (n *leafNode) isPrefixMatch(key []byte) bool {
+	return bytes.Equal(n.key[:len(key)], key)
+}
+
+func (n *leafNode) prefixMatchIndex(leaf *leafNode, depth int) int {
 	limit := min(len(n.key), len(leaf.key)) - depth
 
 	i := 0
@@ -419,9 +407,9 @@ func (n *innerNode) grow() {
 	}
 }
 
-func (n *Node) isLeaf() bool { return n.leaf != nil }
+func (n *Node) IsLeaf() bool { return n.leaf != nil }
 
-func (n *Node) nodeType() int {
+func (n *Node) Type() int {
 	if n.innerNode != nil {
 		return n.innerNode.nodeType
 	}
@@ -431,10 +419,11 @@ func (n *Node) nodeType() int {
 	return -1
 }
 
-func (n *Node) prefixMismatch(key []byte, depth int) int {
+func (n *Node) prefixMatchIndex(key []byte, depth int) int {
 	idx := 0
 	in := n.innerNode
 	p := in.prefix
+
 	for ; idx < in.prefixLen && depth+idx < len(key) && key[depth+idx] == p[idx]; idx++ {
 		if idx == MaxPrefixLen-1 {
 			min := n.minimum()
@@ -447,7 +436,7 @@ func (n *Node) prefixMismatch(key []byte, depth int) int {
 func (n *Node) deleteChild(key byte) {
 	in := n.innerNode
 
-	switch n.nodeType() {
+	switch n.Type() {
 	case Node4, Node16:
 		idx := in.index(key)
 
@@ -494,10 +483,10 @@ func (n *Node) deleteChild(key byte) {
 func (n *Node) shrink() {
 	in := n.innerNode
 
-	switch n.nodeType() {
+	switch n.Type() {
 	case Node4:
 		c := in.children[0]
-		if !c.isLeaf() {
+		if !c.IsLeaf() {
 			child := c.innerNode
 			currentPrefixLen := in.prefixLen
 
@@ -574,7 +563,7 @@ func (n *Node) shrink() {
 func (n *Node) minimum() *Node {
 	in := n.innerNode
 
-	switch n.nodeType() {
+	switch n.Type() {
 	case Node4, Node16:
 		return in.children[0].minimum()
 
@@ -605,7 +594,7 @@ func (n *Node) minimum() *Node {
 func (n *Node) maximum() *Node {
 	in := n.innerNode
 
-	switch n.nodeType() {
+	switch n.Type() {
 	case Leaf:
 		return n
 
@@ -634,14 +623,17 @@ func (n *Node) maximum() *Node {
 }
 
 func (n *Node) Key() []byte {
-	if n.nodeType() != Leaf {
+	if n.Type() != Leaf {
 		return nil
 	}
-	return n.leaf.key
+
+	// return key without null as it is
+	// being appended internally
+	return n.leaf.key[:len(n.leaf.key)-1]
 }
 
 func (n *Node) Value() interface{} {
-	if n.nodeType() != Leaf {
+	if n.Type() != Leaf {
 		return nil
 	}
 	return n.leaf.value
@@ -662,15 +654,15 @@ func (t *Tree) Search(key []byte) interface{} {
 
 func (t *Tree) search(current *Node, key []byte, depth int) interface{} {
 	for current != nil {
-		if current.isLeaf() {
-			if current.leaf.isMatch(key) {
+		if current.IsLeaf() {
+			if current.leaf.IsMatch(key) {
 				return current.leaf.value
 			}
 			return nil
 		}
 
 		in := current.innerNode
-		if current.prefixMismatch(key, depth) != in.prefixLen {
+		if current.prefixMatchIndex(key, depth) != in.prefixLen {
 			return nil
 		} else {
 			depth += in.prefixLen
@@ -703,15 +695,15 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 		return false
 	}
 
-	if current.isLeaf() {
-		if current.leaf.isMatch(key) {
+	if current.IsLeaf() {
+		if current.leaf.IsMatch(key) {
 			current.leaf.value = value
 			return true
 		}
 
 		currentLeaf := current.leaf
 		newLeaf := newLeafNode(key, value)
-		limit := currentLeaf.longestCommonPrefix(newLeaf.leaf, depth)
+		limit := currentLeaf.prefixMatchIndex(newLeaf.leaf, depth)
 
 		n4 := newNode4()
 		n4in := n4.innerNode
@@ -730,29 +722,29 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 
 	in := current.innerNode
 	if in.prefixLen != 0 {
-		mismatch := current.prefixMismatch(key, depth)
+		mIsmatch := current.prefixMatchIndex(key, depth)
 
-		if mismatch != in.prefixLen {
+		if mIsmatch != in.prefixLen {
 			n4 := newNode4()
 			n4in := n4.innerNode
 			replaceNodeRef(currentRef, n4)
-			n4in.prefixLen = mismatch
+			n4in.prefixLen = mIsmatch
 
-			copyBytes(n4in.prefix, in.prefix, mismatch)
+			copyBytes(n4in.prefix, in.prefix, mIsmatch)
 
 			if in.prefixLen < MaxPrefixLen {
-				n4in.addChild(in.prefix[mismatch], current)
-				in.prefixLen -= (mismatch + 1)
-				copyBytes(in.prefix, in.prefix[mismatch+1:], min(in.prefixLen, MaxPrefixLen))
+				n4in.addChild(in.prefix[mIsmatch], current)
+				in.prefixLen -= (mIsmatch + 1)
+				copyBytes(in.prefix, in.prefix[mIsmatch+1:], min(in.prefixLen, MaxPrefixLen))
 			} else {
-				in.prefixLen -= (mismatch + 1)
+				in.prefixLen -= (mIsmatch + 1)
 				minKey := current.minimum().leaf.key
-				n4in.addChild(minKey[depth+mismatch], current)
-				copyBytes(in.prefix, minKey[depth+mismatch+1:], min(in.prefixLen, MaxPrefixLen))
+				n4in.addChild(minKey[depth+mIsmatch], current)
+				copyBytes(in.prefix, minKey[depth+mIsmatch+1:], min(in.prefixLen, MaxPrefixLen))
 			}
 
 			newLeafNode := newLeafNode(key, value)
-			n4in.addChild(key[depth+mismatch], newLeafNode)
+			n4in.addChild(key[depth+mIsmatch], newLeafNode)
 
 			return false
 		}
@@ -780,16 +772,16 @@ func (t *Tree) Delete(key []byte) bool {
 
 func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 	current := *currentRef
-	if current.isLeaf() {
-		if current.leaf.isMatch(key) {
+	if current.IsLeaf() {
+		if current.leaf.IsMatch(key) {
 			replaceNodeRef(currentRef, nil)
 			return true
 		}
 	} else {
 		in := current.innerNode
 		if in.prefixLen != 0 {
-			mismatch := current.prefixMismatch(key, depth)
-			if mismatch != in.prefixLen {
+			mIsmatch := current.prefixMatchIndex(key, depth)
+			if mIsmatch != in.prefixLen {
 				return false
 			}
 			depth += in.prefixLen
@@ -797,9 +789,9 @@ func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 
 		next := in.findChild(key[depth])
 		if *next != nil {
-			if (*next).isLeaf() {
+			if (*next).IsLeaf() {
 				leaf := (*next).leaf
-				if leaf.isMatch(key) {
+				if leaf.IsMatch(key) {
 					current.deleteChild(key[depth])
 					return true
 				}
@@ -816,12 +808,9 @@ func (t *Tree) Each(callback Callback) {
 }
 
 func (t *Tree) each(current *Node, callback Callback) {
-
 	callback(current)
-
 	in := current.innerNode
-
-	switch current.nodeType() {
+	switch current.Type() {
 	case Node4, Node16, Node256:
 		for i := 0; i < len(in.children); i++ {
 			next := in.children[i]
@@ -841,6 +830,53 @@ func (t *Tree) each(current *Node, callback Callback) {
 			}
 		}
 
+	}
+}
+
+// Prefix search
+func (t *Tree) Scan(key []byte, callback Callback) {
+	t.scan(t.root, key, callback)
+}
+
+func (t *Tree) scan(current *Node, key []byte, callback Callback) {
+	depth := 0
+	for current != nil {
+		if current.IsLeaf() {
+			if current.leaf.isPrefixMatch(key[:len(key)-1]) {
+				callback(current)
+			}
+			break
+		}
+
+		if depth == len(key) {
+			leaf := current.minimum().leaf
+			if leaf.isPrefixMatch(key) {
+				t.each(current, callback)
+			}
+			break
+		}
+
+		innerNode := current.innerNode
+		if innerNode.prefixLen > 0 {
+			mismatch := current.prefixMatchIndex(key, depth)
+			mismatch = min(mismatch, innerNode.prefixLen)
+			if mismatch == 0 {
+				break
+			} else if depth+mismatch == len(key) {
+				t.each(current, callback)
+			}
+			depth += innerNode.prefixLen
+			if depth >= len(key) {
+				break
+			}
+		}
+
+		next := innerNode.findChild(key[depth])
+		if next == nil {
+			break
+		}
+		current = *next
+		depth++
 	}
 }
 
@@ -895,16 +931,16 @@ func (ti *iterator) next() {
 		nextIdx := nullIdx
 
 		curNode := ti.levels[ti.levelIdx].node
-		curChildIdx := ti.levels[ti.levelIdx].childIdx
+		curIndex := ti.levels[ti.levelIdx].index
 
 		in := curNode.innerNode
-		switch curNode.nodeType() {
+		switch curNode.Type() {
 		case Node4:
-			nextIdx, nextNode = nextChild(in.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curIndex)
 		case Node16:
-			nextIdx, nextNode = nextChild(in.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curIndex)
 		case Node48:
-			for i := curChildIdx; i < len(in.keys); i++ {
+			for i := curIndex; i < len(in.keys); i++ {
 				index := in.keys[byte(i)]
 				child := in.children[index]
 				if child != nil {
@@ -914,7 +950,7 @@ func (ti *iterator) next() {
 				}
 			}
 		case Node256:
-			nextIdx, nextNode = nextChild(in.children, curChildIdx)
+			nextIdx, nextNode = nextChild(in.children, curIndex)
 		}
 
 		if nextNode == nil {
@@ -925,7 +961,7 @@ func (ti *iterator) next() {
 				return
 			}
 		} else {
-			ti.levels[ti.levelIdx].childIdx = nextIdx
+			ti.levels[ti.levelIdx].index = nextIdx
 			ti.nextNode = nextNode
 
 			if ti.levelIdx+1 >= cap(ti.levels) {
