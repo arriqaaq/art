@@ -1,6 +1,6 @@
 art
 ====
-A simple implementation of Adaptive Radix Tree (ART) in Go. Created for use in personal projects.
+A simple implementation of Adaptive Radix Tree (ART) in Go. Created for use in personal projects like [FlashDB](https://github.com/arriqaaq/flashdb).
 
 About
 =====
