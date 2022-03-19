@@ -105,3 +105,4 @@ BenchmarkWordsSkiplistSearch-16   8	 135836216 ns/op         0 B/op	       0 all
 - [The Adaptive Radix Tree: ARTful Indexing for Main-Memory Databases (Specification)](http://www-db.in.tum.de/~leis/papers/ART.pdf)
 - [Kelly Dunn implementation of the Adaptive Radix Tree](https://github.com/kellydunn/go-art)
 - [Beating hash tables with trees? The ART-ful radix trie](https://www.the-paper-trail.org/post/art-paper-notes/)
+- [Pavel Larkin implementation of ART](https://github.com/plar/go-adaptive-radix-tree)
