@@ -877,6 +877,13 @@ func TestWordsWithPrefix(t *testing.T) {
 	}
 }
 
+func TestEachEmptyTree(t *testing.T) {
+	tree := NewTree()
+	tree.Each(func(n *Node) {
+		// nop
+	})
+}
+
 //
 // Benchmarks
 //
