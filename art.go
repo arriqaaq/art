@@ -761,6 +761,9 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 }
 
 func (t *Tree) Delete(key []byte) bool {
+	if t.root == nil {
+		return false
+	}
 	key = terminate(key)
 	deleted := t.delete(&t.root, key, 0)
 	if deleted {

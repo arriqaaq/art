@@ -877,11 +877,14 @@ func TestWordsWithPrefix(t *testing.T) {
 	}
 }
 
-func TestEachEmptyTree(t *testing.T) {
+func TestEmptyTree(t *testing.T) {
 	tree := NewTree()
-	tree.Each(func(n *Node) {
-		// nop
-	})
+	testKey := []byte("foo")
+	tree.Each(func(n *Node) {})
+	tree.Scan([]byte("foo"), func(n *Node) {})
+	tree.Search(testKey)
+	tree.Delete(testKey)
+	assert.False(t, tree.Iterator().HasNext())
 }
 
 //
