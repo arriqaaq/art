@@ -804,7 +804,9 @@ func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 }
 
 func (t *Tree) Each(callback Callback) {
-	t.each(t.root, callback)
+	if t.Size() > 0 {
+		t.each(t.root, callback)
+	}
 }
 
 func (t *Tree) each(current *Node, callback Callback) {
