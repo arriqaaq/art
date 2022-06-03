@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/armon/go-radix"
 	"github.com/arriqaaq/skiplist"
@@ -1008,5 +1009,44 @@ func BenchmarkWordsSkiplistSearch(b *testing.B) {
 		for _, w := range words {
 			tree.Get(string(w))
 		}
+	}
+}
+
+func BenchmarkIntsArtTreeInsert(b *testing.B) {
+
+	strs := make([][]byte, b.N)
+
+	for n := 0; n < b.N; n++ {
+		bin := make([]byte, 9)
+		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
+		strs[n] = bin
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	tree := NewTree()
+	for n := 0; n < b.N; n++ {
+		tree.Insert(strs[n], nil)
+	}
+}
+
+func BenchmarkIntsArtTreeSearch(b *testing.B) {
+	strs := make([][]byte, b.N)
+
+	for n := 0; n < b.N; n++ {
+		bin := make([]byte, 9)
+		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
+		strs[n] = bin
+	}
+
+	tree := NewTree()
+	for n := 0; n < b.N; n++ {
+		tree.Insert(strs[n], 0)
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+	for n := 0; n < b.N; n++ {
+		_ = tree.Search(strs[n])
 	}
 }
