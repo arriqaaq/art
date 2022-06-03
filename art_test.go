@@ -1017,7 +1017,7 @@ func BenchmarkIntsArtTreeInsert(b *testing.B) {
 	strs := make([][]byte, b.N)
 
 	for n := 0; n < b.N; n++ {
-		bin := make([]byte, 9)
+		bin := make([]byte, 9)// zero terminated keys
 		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
 		strs[n] = bin
 	}
@@ -1034,7 +1034,7 @@ func BenchmarkIntsArtTreeSearch(b *testing.B) {
 	strs := make([][]byte, b.N)
 
 	for n := 0; n < b.N; n++ {
-		bin := make([]byte, 9)
+		bin := make([]byte, 9)// zero terminated keys
 		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
 		strs[n] = bin
 	}
