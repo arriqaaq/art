@@ -6,7 +6,9 @@ package art
 
 import (
 	"bytes"
+	"fmt"
 	"math/bits"
+	"strings"
 )
 
 type (
@@ -85,6 +87,14 @@ const (
 
 	nullIdx = -1
 )
+
+var typeNodeDict = map[int]string{
+	0: "Node4",
+	1: "Node16",
+	2: "Node48",
+	3: "Node256",
+	4: "Leaf",
+}
 
 func min(a int, b int) int {
 	if a < b {
@@ -978,4 +988,42 @@ func (ti *iterator) next() {
 			return
 		}
 	}
+}
+
+func (tree *Tree) String() string {
+	var buf bytes.Buffer
+	buf.WriteByte(13)
+	buf.WriteByte(13)
+	buf.WriteByte(13)
+	if tree.root != nil {
+		buf.WriteString(fmt.Sprintf("\nRoot:\n\tSize:%d\n\tInner:%v\n\tLeaf:%v\n\n", tree.size, tree.root.innerNode, tree.root.leaf))
+	}
+	tree.Each(func(node *Node) {
+		if !node.IsLeaf() {
+			buf.WriteString(node.String(0))
+		}
+	})
+	return buf.String()
+}
+
+func (n *Node) String(depth int) string {
+	var buf bytes.Buffer
+	if n.IsLeaf() {
+		return fmt.Sprintf("Key:%v Val:%v\n", n.Key(), n.Value())
+	}
+	buf.WriteString(fmt.Sprintf("Type:%s Meta:%+v Keys:%v\n", n.TypeString(), n.innerNode.meta, n.innerNode.keys))
+	if n.innerNode.meta.size > 0 {
+		depth++
+		for i := 0; i < n.innerNode.meta.size; i++ {
+			if n.innerNode.children[i] != nil {
+				buf.WriteString(strings.Repeat("\t", depth))
+				buf.WriteString(n.innerNode.children[i].String(depth))
+			}
+		}
+	}
+	return buf.String()
+}
+
+func (n *Node) TypeString() string {
+	return typeNodeDict[n.Type()]
 }

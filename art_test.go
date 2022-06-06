@@ -430,6 +430,7 @@ func TestInsert17AndRemove1AndRootShouldBeNode16(t *testing.T) {
 	if tree.root == nil || tree.root.Type() != Node16 {
 		t.Error("Unexpected root node after inserting and removing")
 	}
+	t.Log(tree.String())
 }
 
 // Inserting 17 values into a tree and removing them all should
@@ -1017,7 +1018,7 @@ func BenchmarkIntsArtTreeInsert(b *testing.B) {
 	strs := make([][]byte, b.N)
 
 	for n := 0; n < b.N; n++ {
-		bin := make([]byte, 9)// zero terminated keys
+		bin := make([]byte, 9) // zero terminated keys
 		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
 		strs[n] = bin
 	}
@@ -1034,7 +1035,7 @@ func BenchmarkIntsArtTreeSearch(b *testing.B) {
 	strs := make([][]byte, b.N)
 
 	for n := 0; n < b.N; n++ {
-		bin := make([]byte, 9)// zero terminated keys
+		bin := make([]byte, 9) // zero terminated keys
 		binary.BigEndian.PutUint64(bin, uint64(time.Now().UnixNano()))
 		strs[n] = bin
 	}
@@ -1049,4 +1050,15 @@ func BenchmarkIntsArtTreeSearch(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		_ = tree.Search(strs[n])
 	}
+}
+
+func TestTreeDump(t *testing.T) {
+	tree := NewTree()
+	tree.Insert([]byte("10"), []byte("10"))
+	tree.Insert([]byte("11"), []byte("11"))
+	tree.Insert([]byte("20"), []byte("20"))
+	tree.Insert([]byte("21"), []byte("21"))
+	tree.Insert([]byte("22"), []byte("22"))
+
+	t.Log(tree.String())
 }
