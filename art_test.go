@@ -1052,7 +1052,7 @@ func BenchmarkIntsArtTreeSearch(b *testing.B) {
 	}
 }
 
-func TestTreeDump(t *testing.T) {
+func TestTreeString(t *testing.T) {
 	tree := NewTree()
 	tree.Insert([]byte("10"), []byte("10"))
 	tree.Insert([]byte("11"), []byte("11"))
@@ -1061,4 +1061,5 @@ func TestTreeDump(t *testing.T) {
 	tree.Insert([]byte("22"), []byte("22"))
 
 	t.Log(tree.String())
+
 }

@@ -121,14 +121,6 @@ func copyBytes(dest []byte, src []byte, numBytes int) {
 	}
 }
 
-func terminate(key []byte) []byte {
-	index := bytes.Index(key, []byte{0})
-	if index < 0 {
-		key = append(key, byte(0))
-	}
-	return key
-}
-
 func newLeafNode(key []byte, value interface{}) *Node {
 	newKey := make([]byte, len(key))
 	copy(newKey, key)
@@ -658,7 +650,6 @@ func (t *Tree) Size() uint64 {
 }
 
 func (t *Tree) Search(key []byte) interface{} {
-	key = terminate(key)
 	return t.search(t.root, key, 0)
 }
 
@@ -690,7 +681,6 @@ func (t *Tree) search(current *Node, key []byte, depth int) interface{} {
 }
 
 func (t *Tree) Insert(key []byte, value interface{}) bool {
-	key = terminate(key)
 	updated := t.insert(&t.root, key, value, 0)
 	if !updated {
 		t.size++
@@ -774,7 +764,6 @@ func (t *Tree) Delete(key []byte) bool {
 	if t.root == nil {
 		return false
 	}
-	key = terminate(key)
 	deleted := t.delete(&t.root, key, 0)
 	if deleted {
 		t.size--
@@ -992,6 +981,7 @@ func (ti *iterator) next() {
 
 func (tree *Tree) String() string {
 	var buf bytes.Buffer
+	visited := make(map[string]bool)
 	buf.WriteByte(13)
 	buf.WriteByte(13)
 	buf.WriteByte(13)
@@ -1000,13 +990,20 @@ func (tree *Tree) String() string {
 	}
 	tree.Each(func(node *Node) {
 		if !node.IsLeaf() {
-			buf.WriteString(node.String(0))
+			buf.WriteString(node.String(0, visited))
 		}
 	})
 	return buf.String()
 }
 
-func (n *Node) String(depth int) string {
+func (n *Node) String(depth int, visited map[string]bool) string {
+	addr := fmt.Sprintf("%p", &*n)
+	defer func() {
+		visited[addr] = true
+	}()
+	if _, ok := visited[addr]; ok {
+		return ""
+	}
 	var buf bytes.Buffer
 	if n.IsLeaf() {
 		return fmt.Sprintf("Key:%v Val:%v\n", n.Key(), n.Value())
@@ -1017,7 +1014,7 @@ func (n *Node) String(depth int) string {
 		for i := 0; i < n.innerNode.meta.size; i++ {
 			if n.innerNode.children[i] != nil {
 				buf.WriteString(strings.Repeat("\t", depth))
-				buf.WriteString(n.innerNode.children[i].String(depth))
+				buf.WriteString(n.innerNode.children[i].String(depth, visited))
 			}
 		}
 	}
