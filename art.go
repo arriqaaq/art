@@ -271,7 +271,13 @@ func (n *innerNode) index(key byte) int {
 	return -1
 }
 
-func (n *innerNode) findChild(key byte) **Node {
+func (n *innerNode) findChild(keys []byte, depth int) **Node {
+	var key byte
+	if len(keys) == depth {
+		key = 0
+	} else {
+		key = keys[depth]
+	}
 	if n == nil {
 		return nil
 	}
@@ -296,10 +302,16 @@ func (n *innerNode) findChild(key byte) **Node {
 	return nil
 }
 
-func (n *innerNode) addChild(key byte, node *Node) {
+func (n *innerNode) addChild(keys []byte, depth int, node *Node) {
+	var key byte
+	if len(keys) == depth {
+		key = 0
+	} else {
+		key = keys[depth]
+	}
 	if n.isFull() {
 		n.grow()
-		n.addChild(key, node)
+		n.addChild(keys, depth, node)
 		return
 	}
 
@@ -395,9 +407,10 @@ func (n *innerNode) grow() {
 	case Node48:
 		n256 := newNode256().innerNode
 		n256.copyMeta(n)
-
+		b := make([]byte, 1)
 		for i := 0; i < len(n.keys); i++ {
-			child := (n.findChild(byte(i)))
+			b[0] = byte(i)
+			child := (n.findChild(b, 0))
 			if child != nil {
 				n256.children[byte(i)] = *child
 			}
@@ -435,7 +448,13 @@ func (n *Node) prefixMatchIndex(key []byte, depth int) int {
 	return idx
 }
 
-func (n *Node) deleteChild(key byte) {
+func (n *Node) deleteChild(keys []byte, depth int) {
+	var key byte
+	if len(keys) == depth {
+		key = byte(0)
+	} else {
+		key = keys[depth]
+	}
 	in := n.innerNode
 
 	switch n.Type() {
@@ -629,9 +648,7 @@ func (n *Node) Key() []byte {
 		return nil
 	}
 
-	// return key without null as it is
-	// being appended internally
-	return n.leaf.key[:len(n.leaf.key)-1]
+	return n.leaf.key
 }
 
 func (n *Node) Value() interface{} {
@@ -669,7 +686,7 @@ func (t *Tree) search(current *Node, key []byte, depth int) interface{} {
 			depth += in.prefixLen
 		}
 
-		v := in.findChild(key[depth])
+		v := in.findChild(key, depth)
 		if v == nil {
 			return nil
 		}
@@ -700,7 +717,6 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 			current.leaf.value = value
 			return true
 		}
-
 		currentLeaf := current.leaf
 		newLeaf := newLeafNode(key, value)
 		limit := currentLeaf.prefixMatchIndex(newLeaf.leaf, depth)
@@ -712,9 +728,8 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 		copyBytes(n4in.prefix, key[depth:], min(n4in.prefixLen, MaxPrefixLen))
 
 		depth += n4in.prefixLen
-
-		n4in.addChild(currentLeaf.key[depth], current)
-		n4in.addChild(key[depth], newLeaf)
+		n4in.addChild(currentLeaf.key, depth, current)
+		n4in.addChild(key, depth, newLeaf)
 		replaceNodeRef(currentRef, n4)
 
 		return false
@@ -733,30 +748,30 @@ func (t *Tree) insert(currentRef **Node, key []byte, value interface{}, depth in
 			copyBytes(n4in.prefix, in.prefix, mIsmatch)
 
 			if in.prefixLen < MaxPrefixLen {
-				n4in.addChild(in.prefix[mIsmatch], current)
+				n4in.addChild(in.prefix, mIsmatch, current)
 				in.prefixLen -= (mIsmatch + 1)
 				copyBytes(in.prefix, in.prefix[mIsmatch+1:], min(in.prefixLen, MaxPrefixLen))
 			} else {
 				in.prefixLen -= (mIsmatch + 1)
 				minKey := current.minimum().leaf.key
-				n4in.addChild(minKey[depth+mIsmatch], current)
+				n4in.addChild(minKey, (depth + mIsmatch), current)
 				copyBytes(in.prefix, minKey[depth+mIsmatch+1:], min(in.prefixLen, MaxPrefixLen))
 			}
 
 			newLeafNode := newLeafNode(key, value)
-			n4in.addChild(key[depth+mIsmatch], newLeafNode)
+			n4in.addChild(key, (depth + mIsmatch), newLeafNode)
 
 			return false
 		}
 		depth += in.prefixLen
 	}
 
-	next := in.findChild(key[depth])
+	next := in.findChild(key, depth)
 	if next != nil {
 		return t.insert(next, key, value, depth+1)
 	}
 
-	in.addChild(key[depth], newLeafNode(key, value))
+	in.addChild(key, depth, newLeafNode(key, value))
 	return false
 }
 
@@ -789,12 +804,12 @@ func (t *Tree) delete(currentRef **Node, key []byte, depth int) bool {
 			depth += in.prefixLen
 		}
 
-		next := in.findChild(key[depth])
+		next := in.findChild(key, depth)
 		if *next != nil {
 			if (*next).IsLeaf() {
 				leaf := (*next).leaf
 				if leaf.IsMatch(key) {
-					current.deleteChild(key[depth])
+					current.deleteChild(key, depth)
 					return true
 				}
 			}
@@ -875,7 +890,7 @@ func (t *Tree) scan(current *Node, key []byte, callback Callback) {
 			}
 		}
 
-		next := innerNode.findChild(key[depth])
+		next := innerNode.findChild(key, depth)
 		if next == nil {
 			break
 		}
