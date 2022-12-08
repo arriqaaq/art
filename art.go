@@ -182,7 +182,10 @@ func (n *leafNode) IsMatch(key []byte) bool {
 }
 
 func (n *leafNode) isPrefixMatch(key []byte) bool {
-	return bytes.Equal(n.key[:len(key)], key)
+	if len(n.key) >= len(key[:]) {
+		return bytes.Equal(n.key[:len(key)], key)
+	}
+	return false
 }
 
 func (n *leafNode) prefixMatchIndex(leaf *leafNode, depth int) int {
