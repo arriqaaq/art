@@ -182,6 +182,9 @@ func (n *leafNode) IsMatch(key []byte) bool {
 }
 
 func (n *leafNode) isPrefixMatch(key []byte) bool {
+	if len(key) > len(n.key) {
+		return false
+	}
 	return bytes.Equal(n.key[:len(key)], key)
 }
 
