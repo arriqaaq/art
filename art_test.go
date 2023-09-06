@@ -877,6 +877,39 @@ func TestWordsWithPrefix(t *testing.T) {
 	}
 }
 
+func TestWordsWithPrefixOutOfRange(t *testing.T) {
+	tree := NewTree()
+
+	file, err := os.Open("test/words.txt")
+	if err != nil {
+		t.Error("Couldn't open words.txt")
+	}
+
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+	for {
+		if line, err := reader.ReadBytes('\n'); err != nil {
+			break
+		} else {
+			tree.Insert([]byte(line), []byte(line))
+		}
+	}
+
+	actual := []string{}
+	leafFilter := func(n *Node) {
+		if n.IsLeaf() {
+			actual = append(actual, string(n.Key()))
+		}
+	}
+	tree.Scan([]byte("ZyzzogetonOUTOFRANGE"), leafFilter)
+
+	if len(actual) != 0 {
+		fmt.Println(len(actual))
+		t.Error("Unexpected item found")
+	}
+}
+
 func TestEmptyTree(t *testing.T) {
 	tree := NewTree()
 	testKey := []byte("foo")
