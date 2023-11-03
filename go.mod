@@ -1,4 +1,4 @@
-module github.com/v3v3r3v/art
+module github.com/arriqaaq/art
 
 go 1.17
 
